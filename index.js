@@ -358,6 +358,7 @@ export function apply(ctx, rawConfig) {
     const text = String(query || '').trim();
     if (text === '') return [];
     const max = Math.max(1, Math.min(Number(limit) || 8, 20));
+    let hits = [];
     try {
       const data = await gh(
         token,
@@ -365,30 +366,35 @@ export function apply(ctx, rawConfig) {
         { accept: 'application/vnd.github.text-match+json' },
       );
       const items = Array.isArray(data?.items) ? data.items : [];
-      return items.slice(0, max).map((item) => ({
+      hits = items.slice(0, max).map((item) => ({
         path: item.path,
         fragments: Array.isArray(item.text_matches)
           ? item.text_matches.map((match) => String(match.fragment || '').slice(0, 240)).filter((part) => part !== '')
           : [],
       }));
     } catch (error) {
-      /* Code search needs extra scopes and is rate-limited; fall back to the inbox. */
-      const files = await listNotes(token, settings.inbox);
-      const needle = text.toLowerCase();
-      const hits = [];
-      for (const file of files.slice(0, 40)) {
-        if (hits.length >= max) break;
-        const data = await readNote(token, file.path, settings.branch).catch(() => null);
-        if (data === null) continue;
-        const index = data.text.toLowerCase().indexOf(needle);
-        if (index === -1) continue;
-        hits.push({
-          path: file.path,
-          fragments: [data.text.slice(Math.max(0, index - 60), index + 180).replace(/\s+/g, ' ')],
-        });
-      }
-      return hits;
+      hits = [];
     }
+    /*
+     * Code search is rate-limited, needs the right token scope, and a fresh
+     * private repository stays unindexed for a while. An empty result is not
+     * proof of absence, so scan the inbox before answering "nothing found".
+     */
+    if (hits.length > 0) return hits;
+    const files = await listNotes(token, settings.inbox);
+    const needle = text.toLowerCase();
+    for (const file of files.slice(0, 40)) {
+      if (hits.length >= max) break;
+      const data = await readNote(token, file.path, settings.branch).catch(() => null);
+      if (data === null) continue;
+      const index = data.text.toLowerCase().indexOf(needle);
+      if (index === -1) continue;
+      hits.push({
+        path: file.path,
+        fragments: [data.text.slice(Math.max(0, index - 60), index + 180).replace(/\s+/g, ' ')],
+      });
+    }
+    return hits;
   }
 
   //#region client actions
