@@ -2422,7 +2422,7 @@ window.__ModuleLoader__.load({
                             ),
                             h(
                               MetaField,
-                              { key: 'date', label: t('date'), size: 'w-md' },
+                              { key: 'date', label: t('date'), size: 'w-lg' },
                               h('input', { value: active.date, spellCheck: false, onChange: setField('date') }),
                               h(
                                 'button',
