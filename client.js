@@ -84,6 +84,8 @@ window.__ModuleLoader__.load({
       delete: '删除',
       confirmDelete: '确认删除',
       deleteTitle: '从仓库删除这篇文章？',
+      deleted: '已删除：{path}',
+      removeDraftHint: '移除这条本地草稿（仓库里的文件保留）',
       publishOk: '已提交：{path}',
       publishAll: '全部提交（{n}）',
       publishAllHint: '把所有未提交的笔记一次写进仓库并立即同步',
@@ -213,6 +215,8 @@ window.__ModuleLoader__.load({
       delete: 'Delete',
       confirmDelete: 'Delete',
       deleteTitle: 'Delete this post from the repository?',
+      deleted: 'Deleted: {path}',
+      removeDraftHint: 'Remove this local draft (the repository file stays)',
       publishOk: 'Committed: {path}',
       publishAll: 'Commit all ({n})',
       publishAllHint: 'Write every uncommitted note to the vault and sync now',
@@ -1025,7 +1029,12 @@ window.__ModuleLoader__.load({
 .bs-chevron-open{transform:rotate(90deg)}
 .bs-group-label{flex:auto;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .bs-group-count{flex:none;margin-left:auto;font-weight:400;letter-spacing:0;text-transform:none;opacity:.75}
-.bs-item{display:flex;flex-direction:column;gap:2px;width:100%;padding:7px 9px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;text-align:left;cursor:pointer;transition:background-color .15s ease}
+.bs-item-wrap{display:flex;align-items:stretch;gap:2px;width:100%}
+.bs-item{display:flex;flex:auto;flex-direction:column;gap:2px;min-width:0;width:auto;padding:7px 9px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;text-align:left;cursor:pointer;transition:background-color .15s ease}
+.bs-item-del{flex:none;width:20px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:14px;line-height:1;cursor:pointer;opacity:0;transition:opacity .12s ease,background-color .12s ease,color .12s ease}
+.bs-item-wrap:hover .bs-item-del,.bs-item-wrap:focus-within .bs-item-del{opacity:1}
+.bs-item-del:hover{background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent);color:var(--dsw-alias-state-error-primary)}
+.bs-item-del-on{width:auto;padding:0 6px;font-size:10.5px;opacity:1;background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent);color:var(--dsw-alias-state-error-primary)}
 .bs-item:hover{background:var(--dsw-alias-interactive-bg-hover,var(--dsw-alias-bg-layer-2))}
 .bs-item-on,.bs-item-on:hover{background:color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent)}
 .bs-item-top{display:flex;align-items:center;gap:6px;min-width:0}
@@ -1478,6 +1487,7 @@ window.__ModuleLoader__.load({
         const [notice, setNotice] = useState(null);
         const [busy, setBusy] = useState('');
         const [confirmDelete, setConfirmDelete] = useState(false);
+        const [deletePath, setDeletePath] = useState('');
         const textRef = useRef(null);
         const previewRef = useRef(null);
         const bootstrapped = useRef(false);
@@ -1877,6 +1887,38 @@ window.__ModuleLoader__.load({
           }
         }, [active, patch, report, reportError, t, loadPosts]);
 
+        const deletePost = useCallback(
+          async (item) => {
+            setBusy('delete');
+            try {
+              await callHost('note.delete', { path: item.path, sha: item.sha || undefined });
+              const remaining = drafts.filter((draft) => draft.remotePath !== item.path);
+              if (remaining.length === 0) {
+                const fresh = blankDraft();
+                setDrafts([fresh]);
+                setActiveId(fresh.id);
+              } else {
+                setDrafts(remaining);
+                if (active !== null && active.remotePath === item.path) setActiveId(remaining[0].id);
+              }
+              report('ok', t('deleted', { path: item.path }));
+              try {
+                await callHost('sync.now');
+              } catch (error) {
+                /* the sync badge reports the failure */
+              }
+              void loadPosts();
+              await refreshStatus();
+            } catch (error) {
+              reportError('failed', error);
+            } finally {
+              setBusy('');
+              setDeletePath('');
+            }
+          },
+          [drafts, active, report, reportError, t, loadPosts, refreshStatus],
+        );
+
         const openInObsidian = useCallback(
           async (relative) => {
             try {
@@ -2121,44 +2163,86 @@ window.__ModuleLoader__.load({
           );
 
         const renderSideItem = (item, kind) => {
-          const selected = active !== null && active.id === item.id && kind === 'draft';
+          const selected = kind === 'draft' && active !== null && active.id === item.id;
           const itemDirty =
             item.remotePath !== '' &&
             item.publishedFingerprint !== '' &&
             item.publishedFingerprint !== draftFingerprint(item);
-          if (kind === 'draft') {
-            return h(
-              'button',
-              {
-                type: 'button',
-                key: item.id,
-                className: 'bs-item' + (selected ? ' bs-item-on' : ''),
-                onClick: () => {
+          const rowKey = (kind === 'draft' ? 'd:' : 'p:') + (kind === 'draft' ? item.id : item.path);
+          const confirming = deletePath === rowKey;
+          const openRow =
+            kind === 'draft'
+              ? () => {
                   setActiveId(item.id);
                   setView('write');
                   setConfirmDelete(false);
+                  setDeletePath('');
+                }
+              : () => {
+                  void openPost(item);
+                  setDeletePath('');
+                };
+          const content =
+            kind === 'draft'
+              ? [
+                  h(
+                    'span',
+                    { className: 'bs-item-top', key: 'top' },
+                    itemDirty ? h('span', { className: 'bs-dot', title: t('dirty'), 'aria-hidden': true }) : null,
+                    h('span', { className: 'bs-item-title' }, item.title.trim() === '' ? t('untitled') : item.title),
+                    item.remotePath !== ''
+                      ? h('span', { className: 'bs-badge bs-badge-live' }, t('remoteBadge'))
+                      : h('span', { className: 'bs-badge' }, t('draftBadge')),
+                  ),
+                  h('span', { className: 'bs-item-meta', key: 'meta' }, h('span', null, relTime(item.updatedAt, t))),
+                ]
+              : [
+                  h('span', { className: 'bs-item-top', key: 'top' }, h('span', { className: 'bs-item-title' }, item.name)),
+                  h('span', { className: 'bs-item-meta', key: 'meta' }, h('span', null, item.path)),
+                ];
+
+          return h(
+            'div',
+            {
+              className: 'bs-item-wrap',
+              key: rowKey,
+              onContextMenu: (event) => {
+                event.preventDefault();
+                setDeletePath(rowKey);
+              },
+            },
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'bs-item' + (selected ? ' bs-item-on' : ''),
+                onClick: openRow,
+              },
+              content,
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'bs-item-del' + (confirming ? ' bs-item-del-on' : ''),
+                title: kind === 'draft' ? t('removeDraftHint') : t('deleteTitle'),
+                'aria-label': kind === 'draft' ? t('removeDraftHint') : t('deleteTitle'),
+                onClick: (event) => {
+                  event.stopPropagation();
+                  if (confirming === false) {
+                    setDeletePath(rowKey);
+                    return;
+                  }
+                  if (kind === 'draft') {
+                    removeDraft(item.id);
+                    setDeletePath('');
+                  } else {
+                    void deletePost(item);
+                  }
                 },
               },
-              h(
-                'span',
-                { className: 'bs-item-top' },
-                itemDirty ? h('span', { className: 'bs-dot', title: t('dirty'), 'aria-hidden': true }) : null,
-                h('span', { className: 'bs-item-title' }, item.title.trim() === '' ? t('untitled') : item.title),
-                item.remotePath !== '' ? h('span', { className: 'bs-badge bs-badge-live' }, t('remoteBadge')) : h('span', { className: 'bs-badge' }, t('draftBadge')),
-              ),
-              h('span', { className: 'bs-item-meta' }, h('span', null, relTime(item.updatedAt, t))),
-            );
-          }
-          return h(
-            'button',
-            {
-              type: 'button',
-              key: item.path,
-              className: 'bs-item',
-              onClick: () => void openPost(item),
-            },
-            h('span', { className: 'bs-item-top' }, h('span', { className: 'bs-item-title' }, item.name)),
-            h('span', { className: 'bs-item-meta' }, h('span', null, item.path)),
+              confirming ? (kind === 'draft' ? t('confirmDiscard') : t('confirmDelete')) : '×',
+            ),
           );
         };
 
