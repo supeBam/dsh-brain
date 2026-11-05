@@ -3,8 +3,18 @@
 DeepSeek Harness 的侧边栏第二大脑：随手记想法、剪藏外部信息，AI 在对话里主动帮你归档，全部落成一个 **Obsidian 兼容的 Markdown 仓库**，随时能换成网站。
 
 ```
-左侧边栏「第二大脑」→ 写/收 → 提交到私有仓库 → （可选）用 Obsidian / 站点读
+侧边栏 / AI ──写──▶  ~/brain（本地 vault，Obsidian 直接打开）
+                          │ 3 秒去抖，git pull --rebase → commit → push
+                          ▼
+                 GitHub 私有仓库（备份 / 多端 / 站点源）
 ```
+
+## 本地优先，git 同步
+
+- **写的是文件，不是 API**：插件和 `brain_save` 直接写本机 vault，Obsidian 打开同一目录即可实时看到，离线也能写。
+- **同步是后台的**：写入后 3 秒去抖，自动 `git pull --rebase --autostash` → `commit` → `push`（SSH 失败时用已存令牌走 HTTPS）。冲突就停下报错，不自动覆盖。
+- **没有本地副本时回退**：换一台机器、只装了插件没 clone 仓库，自动走 GitHub Contents API。
+- **搜索在本地**：`brain_search` 扫描 Markdown 文件，毫秒级，不受 GitHub code search 索引延迟影响。
 
 ## 为什么是仓库，不是数据库
 
@@ -64,7 +74,11 @@ DSH_CLI="$(command -v dsh || echo '/Applications/DeepSeek Harness.app/Contents/R
 
 ## 首次使用
 
-1. 打开面板 → 右上角齿轮 → 填仓库 `owner` / 仓库名 / 分支 / 收件箱目录（默认 `inbox`）。
+0. 先把仓库 clone 到本地，并让 Obsidian 打开它（`Open folder as vault`）：
+   ```bash
+   git clone git@github.com:supeBam/brain.git ~/brain
+   ```
+1. 打开面板 → 右上角齿轮 → 确认「本地 vault」是本机路径（默认 `~/brain`），再填仓库 `owner` / 仓库名 / 分支 / 收件箱目录（默认 `inbox`）。
 2. 令牌：点「使用 gh CLI 令牌」复用本机登录，或粘贴一个有 `repo` 写权限的 PAT。
 3. 保存设置（会重载插件），回到编辑页开始写。
 
@@ -72,6 +86,7 @@ DSH_CLI="$(command -v dsh || echo '/Applications/DeepSeek Harness.app/Contents/R
 
 | 字段 | 说明 | 默认 |
 | --- | --- | --- |
+| 本地 vault | 插件直接写的目录；不存在时回退到 GitHub API | `~/brain` |
 | 仓库所有者 / 仓库名 | `owner/repo` | `supeBam/brain` |
 | 分支 | 提交目标分支 | `main` |
 | 收件箱目录 | 新笔记落点，留空为根目录 | `inbox` |
@@ -79,7 +94,7 @@ DSH_CLI="$(command -v dsh || echo '/Applications/DeepSeek Harness.app/Contents/R
 
 ## 安全
 
-- 令牌只写入宿主 credentials 记录（键 `brain`），不出现在页面、配置或日志里。
+- 令牌只写入宿主 credentials 记录（键 `brain/github`），不出现在页面、配置或日志里。
 - 页面通过同源 `POST /brain/api` 发指令；令牌每次请求时解析，轮换后下一次提交立即生效。
 - 环境变量 `GITHUB_TOKEN` / `GH_TOKEN` 可作为后备。
 

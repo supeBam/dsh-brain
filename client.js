@@ -129,6 +129,16 @@ window.__ModuleLoader__.load({
       inboxHint: '新笔记提交到 {dir}/，文件名 YYYY-MM-DD-slug.md',
       configRestart: '保存后会重新加载插件，页面会自动刷新配置',
       obsidianHint: '仓库是纯 Markdown + YAML + [[双链]]，可直接用 Obsidian 打开，也可以作为网站源。',
+      vaultPath: '本地 vault',
+      vaultHint: '插件直接写这个目录，Obsidian 打开同一目录就能实时看到；留空或目录不存在时自动回退到 GitHub 写接口。',
+      modeLocal: '本地',
+      modeRemote: '远程',
+      openInObsidian: '在 Obsidian 打开',
+      syncOk: '已同步',
+      syncPending: '同步中…',
+      syncFailed: '同步失败',
+      syncNow: '立即同步',
+      syncIdle: '未同步',
       commit: '提交说明',
       commitHint: '留空自动生成',
       close: '关闭',
@@ -240,6 +250,16 @@ window.__ModuleLoader__.load({
       inboxHint: 'New notes go to {dir}/ as YYYY-MM-DD-slug.md',
       configRestart: 'Saving reloads the plugin; the page re-reads the config',
       obsidianHint: 'The vault is plain Markdown + YAML + [[wikilinks]]; open it in Obsidian or use it as a site source.',
+      vaultPath: 'Local vault',
+      vaultHint: 'The plugin writes this folder directly; opening the same folder in Obsidian shows every change live. Empty or missing folder falls back to the GitHub API.',
+      modeLocal: 'Local',
+      modeRemote: 'Remote',
+      openInObsidian: 'Open in Obsidian',
+      syncOk: 'Synced',
+      syncPending: 'Syncing…',
+      syncFailed: 'Sync failed',
+      syncNow: 'Sync now',
+      syncIdle: 'Not synced',
       commit: 'Commit message',
       commitHint: 'Empty means generated',
       close: 'Close',
@@ -259,6 +279,7 @@ window.__ModuleLoader__.load({
       branch: 'main',
       inbox: 'inbox',
       siteUrl: '',
+      vaultPath: '~/brain',
     };
 
     function cleanSettings(value) {
@@ -1068,7 +1089,10 @@ window.__ModuleLoader__.load({
 .bs-preview .bs-callout-warning,.bs-preview .bs-callout-caution{border-left-color:var(--dsw-alias-state-warn-primary);background:color-mix(in srgb, var(--dsw-alias-state-warn-primary) 10%, transparent)}
 .bs-preview .bs-callout-danger,.bs-preview .bs-callout-error,.bs-preview .bs-callout-bug{border-left-color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 9%, transparent)}
 .bs-preview .bs-callout-tip,.bs-preview .bs-callout-success,.bs-preview .bs-callout-done{border-left-color:var(--dsw-alias-state-success-primary);background:color-mix(in srgb, var(--dsw-alias-state-success-primary) 10%, transparent)}
-@.bs-side{width:200px}.bs-form-row{grid-template-columns:1fr}.bs-form-label{text-align:left}.bs-hint,.bs-row-actions{margin-left:0}}
+.bs-sync{flex:none;padding:1px 8px;border:0;border-radius:999px;background:color-mix(in srgb, var(--dsw-alias-state-success-primary) 14%, transparent);color:var(--dsw-alias-state-success-primary);font:inherit;font-size:10.5px;line-height:16px;cursor:pointer}
+.bs-sync-bad{background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent);color:var(--dsw-alias-state-error-primary)}
+.bs-sync-running{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
+@media (max-width:860px){.bs-side{width:200px}.bs-form-row{grid-template-columns:1fr}.bs-form-label{text-align:left}.bs-hint,.bs-row-actions{margin-left:0}}
 @media (max-width:640px){.bs-side{display:none}}
 `;
     //#endregion
@@ -1229,6 +1253,13 @@ window.__ModuleLoader__.load({
             h(
               'div',
               { className: 'bs-form-row' },
+              h('span', { className: 'bs-form-label' }, t('vaultPath')),
+              h('input', { className: 'bs-input', value: form.vaultPath, onChange: set('vaultPath'), spellCheck: false, placeholder: '~/brain' }),
+            ),
+            h('p', { className: 'bs-hint' }, t('vaultHint')),
+            h(
+              'div',
+              { className: 'bs-form-row' },
               h('span', { className: 'bs-form-label' }, t('owner')),
               h('input', { className: 'bs-input', value: form.owner, onChange: set('owner'), spellCheck: false, placeholder: 'supeBam' }),
             ),
@@ -1343,7 +1374,7 @@ window.__ModuleLoader__.load({
     function makePage() {
       return function BlogStudioPage() {
         const [settings, setSettings] = useState(() => cleanSettings(null));
-        const [status, setStatus] = useState({ phase: 'loading', configured: false, valid: false, login: '', source: 'none' });
+        const [status, setStatus] = useState({ phase: 'loading', configured: false, valid: false, login: '', source: 'none', mode: 'remote', vaultPath: '', sync: null });
         const [posts, setPosts] = useState({ phase: 'idle', items: [], error: '' });
         const [drafts, setDrafts] = useState(readDrafts);
         const [activeId, setActiveId] = useState(null);
@@ -1421,6 +1452,9 @@ window.__ModuleLoader__.load({
               valid: data.valid === true,
               login: typeof data.login === 'string' ? data.login : '',
               source: typeof data.source === 'string' ? data.source : 'none',
+              mode: data.mode === 'local' ? 'local' : 'remote',
+              vaultPath: typeof data.vaultPath === 'string' ? data.vaultPath : '',
+              sync: data.sync !== null && typeof data.sync === 'object' ? data.sync : null,
             });
             if (data.config !== undefined && data.config !== null) setSettings(cleanSettings(data.config));
             return data;
@@ -1607,6 +1641,7 @@ window.__ModuleLoader__.load({
             });
             report('ok', t('publishOk', { path: data.path }));
             void loadPosts();
+            window.setTimeout(() => void refreshStatus(), 4500);
           } catch (error) {
             reportError('failed', error);
           } finally {
@@ -1632,6 +1667,27 @@ window.__ModuleLoader__.load({
             setConfirmDelete(false);
           }
         }, [active, patch, report, reportError, t, loadPosts]);
+
+        const openInObsidian = useCallback(
+          async (relative) => {
+            try {
+              const data = await callHost('obsidian.url', { path: relative });
+              if (typeof data.url === 'string' && data.url !== '') window.location.href = data.url;
+            } catch (error) {
+              reportError('failed', error);
+            }
+          },
+          [reportError],
+        );
+
+        const syncNow = useCallback(async () => {
+          try {
+            await callHost('sync.now');
+            await refreshStatus();
+          } catch (error) {
+            reportError('failed', error);
+          }
+        }, [refreshStatus, reportError]);
 
         const insertText = useCallback(
           (text) => {
@@ -2175,6 +2231,34 @@ window.__ModuleLoader__.load({
                                 ),
                           ),
                           active.remotePath !== '' && active.publishedAt > 0 ? h('span', { className: 'bs-inline-state bs-inline-state-ok' }, t('published')) : null,
+                          status.mode === 'local'
+                            ? h(
+                                'button',
+                                {
+                                  type: 'button',
+                                  className:
+                                    'bs-sync' +
+                                    (status.sync !== null && status.sync.ok === false ? ' bs-sync-bad' : '') +
+                                    (status.sync !== null && status.sync.running ? ' bs-sync-running' : ''),
+                                  title: status.sync !== null && status.sync.message !== '' ? status.sync.message : t('syncNow'),
+                                  onClick: () => void syncNow(),
+                                },
+                                status.sync !== null && status.sync.running
+                                  ? t('syncPending')
+                                  : status.sync !== null && status.sync.at > 0
+                                    ? status.sync.ok
+                                      ? t('syncOk')
+                                      : t('syncFailed')
+                                    : t('syncIdle'),
+                              )
+                            : null,
+                          status.mode === 'local' && active.remotePath !== ''
+                            ? h(
+                                'button',
+                                { type: 'button', className: 'bs-btn bs-btn-quiet', onClick: () => void openInObsidian(active.remotePath) },
+                                t('openInObsidian'),
+                              )
+                            : null,
                           postUrl === ''
                             ? null
                             : h(
