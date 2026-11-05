@@ -86,6 +86,8 @@ window.__ModuleLoader__.load({
       deleteTitle: '从仓库删除这篇文章？',
       publishOk: '已提交：{path}',
       publishAll: '全部提交（{n}）',
+      publishAllHint: '把所有未提交的笔记一次写进仓库并立即同步',
+      publishThis: '提交本篇',
       publishAllOk: '已提交 {n} 篇',
       publishAllPartial: '提交了 {ok} 篇，{failed} 篇失败：{msg}',
       publishedTo: '已提交到 {path}',
@@ -213,6 +215,8 @@ window.__ModuleLoader__.load({
       deleteTitle: 'Delete this post from the repository?',
       publishOk: 'Committed: {path}',
       publishAll: 'Commit all ({n})',
+      publishAllHint: 'Write every uncommitted note to the vault and sync now',
+      publishThis: 'Commit this note',
       publishAllOk: 'Committed {n} notes',
       publishAllPartial: 'Committed {ok}, {failed} failed: {msg}',
       publishedTo: 'Committed to {path}',
@@ -988,7 +992,7 @@ window.__ModuleLoader__.load({
     //#region styles
     const PAGE_CSS = `
 .bs-page{box-sizing:border-box;display:flex;flex-direction:column;width:100%;height:100%;min-height:0;overflow:hidden;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-size:13px}
-.bs-top{display:flex;flex:none;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.bs-top{display:flex;flex:none;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--dsw-alias-border-l1)}
 [data-platform=darwin] .bs-top{padding-top:calc(10px + var(--dsh-frame-top-clearance,0px))}
 .bs-brand{display:flex;flex:none;align-items:center;gap:8px;min-width:0}
 .bs-brand-mark{display:inline-flex;flex:none;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;background:color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, transparent);color:var(--dsw-alias-brand-primary)}
@@ -2526,12 +2530,12 @@ window.__ModuleLoader__.load({
                                 'button',
                                 {
                                   type: 'button',
-                                  className: 'bs-ico',
+                                  className: 'bs-btn bs-btn-quiet',
                                   title: active.remotePath === '' ? t('discardTitle') : t('deleteTitle'),
-                                  'aria-label': active.remotePath === '' ? t('discardTitle') : t('deleteTitle'),
                                   onClick: () => setConfirmDelete(true),
                                 },
                                 glyphTrash(),
+                                active.remotePath === '' ? t('discard') : t('delete'),
                               ),
                           h('span', { className: 'bs-inline-state' }, busy === 'read' ? '…' : ''),
                         ),
@@ -2588,19 +2592,18 @@ window.__ModuleLoader__.load({
                     { type: 'button', className: 'bs-ico', key: 'settings', title: t('settings'), 'aria-label': t('settings'), onClick: () => setView('settings') },
                     glyphGear(),
                   ),
-                  pendingDrafts.length > 0
-                    ? h(
-                        'button',
-                        {
-                          type: 'button',
-                          className: 'bs-btn',
-                          key: 'publishAll',
-                          disabled: busy === 'publishAll' || busy === 'publish',
-                          onClick: () => void publishAll(),
-                        },
-                        busy === 'publishAll' ? t('publishing') : t('publishAll', { n: pendingDrafts.length }),
-                      )
-                    : null,
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'bs-btn',
+                      key: 'publishAll',
+                      disabled: pendingDrafts.length === 0 || busy === 'publishAll' || busy === 'publish',
+                      title: t('publishAllHint'),
+                      onClick: () => void publishAll(),
+                    },
+                    busy === 'publishAll' ? t('publishing') : t('publishAll', { n: pendingDrafts.length }),
+                  ),
                   h(
                     'button',
                     {
@@ -2611,7 +2614,7 @@ window.__ModuleLoader__.load({
                       onClick: () => void publish(),
                     },
                     glyphCloud(),
-                    busy === 'publish' ? t('publishing') : t('publish'),
+                    busy === 'publish' ? t('publishing') : t('publishThis'),
                   ),
                 ],
           ),
