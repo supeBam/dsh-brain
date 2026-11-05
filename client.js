@@ -1047,6 +1047,7 @@ window.__ModuleLoader__.load({
 .bs-inline-state{font-size:11px;color:var(--dsw-alias-label-secondary)}
 .bs-inline-state-ok{color:var(--dsw-alias-state-success-primary)}
 .bs-inline-state-bad{color:var(--dsw-alias-state-error-primary)}
+.bs-inline-state-warn{color:var(--dsw-alias-state-warn-primary)}
 .bs-md{position:relative;min-height:100%}
 .bs-preview h1,.bs-preview h2,.bs-preview h3,.bs-preview h4,.bs-preview h5,.bs-preview h6{margin:1.4em 0 .55em;font-weight:600;line-height:1.35}
 .bs-preview h1{font-size:1.62em;padding-bottom:.28em;border-bottom:1px solid var(--dsw-alias-border-l1)}
@@ -1091,6 +1092,7 @@ window.__ModuleLoader__.load({
 .bs-preview .bs-callout-warning,.bs-preview .bs-callout-caution{border-left-color:var(--dsw-alias-state-warn-primary);background:color-mix(in srgb, var(--dsw-alias-state-warn-primary) 10%, transparent)}
 .bs-preview .bs-callout-danger,.bs-preview .bs-callout-error,.bs-preview .bs-callout-bug{border-left-color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 9%, transparent)}
 .bs-preview .bs-callout-tip,.bs-preview .bs-callout-success,.bs-preview .bs-callout-done{border-left-color:var(--dsw-alias-state-success-primary);background:color-mix(in srgb, var(--dsw-alias-state-success-primary) 10%, transparent)}
+.bs-dot{flex:none;width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-state-warn-primary)}
 .bs-sync{flex:none;padding:1px 8px;border:0;border-radius:999px;background:color-mix(in srgb, var(--dsw-alias-state-success-primary) 14%, transparent);color:var(--dsw-alias-state-success-primary);font:inherit;font-size:10.5px;line-height:16px;cursor:pointer}
 .bs-sync-bad{background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent);color:var(--dsw-alias-state-error-primary)}
 .bs-sync-running{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
@@ -1117,6 +1119,7 @@ window.__ModuleLoader__.load({
         remotePath: typeof value.remotePath === 'string' ? value.remotePath : '',
         remoteSha: typeof value.remoteSha === 'string' ? value.remoteSha : '',
         remoteUrl: typeof value.remoteUrl === 'string' ? value.remoteUrl : '',
+        publishedFingerprint: typeof value.publishedFingerprint === 'string' ? value.publishedFingerprint : '',
         publishedAt: Number.isFinite(value.publishedAt) ? value.publishedAt : 0,
         updatedAt: Number.isFinite(value.updatedAt) ? value.updatedAt : Date.now(),
       };
@@ -1158,6 +1161,7 @@ window.__ModuleLoader__.load({
         remotePath: '',
         remoteSha: '',
         remoteUrl: '',
+        publishedFingerprint: '',
         publishedAt: 0,
         updatedAt: Date.now(),
       };
@@ -1165,6 +1169,20 @@ window.__ModuleLoader__.load({
 
     function isBlank(draft) {
       return draft.title.trim() === '' && draft.body.trim() === '';
+    }
+
+    /**
+     * The fields that end up in the file. Comparing this against what was last
+     * written tells the page whether the open note differs from the vault.
+     */
+    function draftFingerprint(draft) {
+      return JSON.stringify([
+        String(draft.title || '').trim(),
+        draft.type || 'thought',
+        splitList(draft.tags).join(','),
+        String(draft.source || '').trim(),
+        String(draft.body || ''),
+      ]);
     }
     //#endregion
 
@@ -1598,9 +1616,11 @@ window.__ModuleLoader__.load({
                 remotePath: data.path,
                 remoteSha: data.sha,
                 remoteUrl: '',
+                publishedFingerprint: '',
                 publishedAt: 0,
                 updatedAt: Date.now(),
               };
+              draft.publishedFingerprint = draftFingerprint(draft);
               setDrafts((list) => [draft, ...list]);
               setActiveId(draft.id);
               setView('write');
@@ -1618,6 +1638,12 @@ window.__ModuleLoader__.load({
           if (active.remoteUrl !== '') return active.remoteUrl;
           return settings.siteUrl.trim();
         }, [active, settings.siteUrl]);
+
+        const activeDirty = useMemo(() => {
+          if (active === null || active.remotePath === '') return false;
+          if (active.publishedFingerprint === '') return false;
+          return active.publishedFingerprint !== draftFingerprint(active);
+        }, [active]);
 
         const repoUrl = useMemo(() => {
           if (active === null || active.remotePath === '') return '';
@@ -1672,6 +1698,7 @@ window.__ModuleLoader__.load({
               remotePath: data.path,
               remoteSha: data.sha,
               remoteUrl: typeof data.url === 'string' ? data.url : active.remoteUrl,
+              publishedFingerprint: draftFingerprint({ ...active, title }),
               publishedAt: Date.now(),
             });
             report('ok', t('publishOk', { path: data.path }));
@@ -1933,6 +1960,10 @@ window.__ModuleLoader__.load({
 
         const renderSideItem = (item, kind) => {
           const selected = active !== null && active.id === item.id && kind === 'draft';
+          const itemDirty =
+            item.remotePath !== '' &&
+            item.publishedFingerprint !== '' &&
+            item.publishedFingerprint !== draftFingerprint(item);
           if (kind === 'draft') {
             return h(
               'button',
@@ -1949,6 +1980,7 @@ window.__ModuleLoader__.load({
               h(
                 'span',
                 { className: 'bs-item-top' },
+                itemDirty ? h('span', { className: 'bs-dot', title: t('dirty'), 'aria-hidden': true }) : null,
                 h('span', { className: 'bs-item-title' }, item.title.trim() === '' ? t('untitled') : item.title),
                 item.remotePath !== '' ? h('span', { className: 'bs-badge bs-badge-live' }, t('remoteBadge')) : h('span', { className: 'bs-badge' }, t('draftBadge')),
               ),
@@ -2265,7 +2297,13 @@ window.__ModuleLoader__.load({
                                   active.remotePath,
                                 ),
                           ),
-                          active.remotePath !== '' && active.publishedAt > 0 ? h('span', { className: 'bs-inline-state bs-inline-state-ok' }, t('published')) : null,
+                          active.remotePath === ''
+                            ? null
+                            : activeDirty
+                              ? h('span', { className: 'bs-inline-state bs-inline-state-warn' }, t('dirty'))
+                              : active.publishedFingerprint !== ''
+                                ? h('span', { className: 'bs-inline-state bs-inline-state-ok' }, t('clean'))
+                                : null,
                           status.mode === 'local'
                             ? h(
                                 'button',
