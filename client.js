@@ -145,6 +145,7 @@ window.__ModuleLoader__.load({
       discard: '删除草稿',
       confirmDiscard: '确认删除草稿',
       discardTitle: '删除这条本地草稿？仓库里的文章不受影响',
+      renderFailed: '页面渲染出错',
     };
 
     const DICT_EN = {
@@ -266,6 +267,7 @@ window.__ModuleLoader__.load({
       discard: 'Discard draft',
       confirmDiscard: 'Discard draft',
       discardTitle: 'Discard this local draft? The repository file is untouched',
+      renderFailed: 'Page failed to render',
     };
     //#endregion
 
@@ -1371,7 +1373,40 @@ window.__ModuleLoader__.load({
     //#endregion
 
     //#region page
-    function makePage() {
+    class PageBoundary extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = { error: null };
+      }
+
+      static getDerivedStateFromError(error) {
+        return { error };
+      }
+
+      componentDidCatch(error, info) {
+        if (typeof console !== 'undefined') console.error('[brain] page crashed:', error, info);
+      }
+
+      render() {
+        if (this.state.error !== null) {
+          const t = this.props.t;
+          const message = this.state.error && this.state.error.message ? this.state.error.message : String(this.state.error);
+          return h(
+            'div',
+            { className: 'bs-page', style: { padding: '24px' } },
+            h(
+              'div',
+              { className: 'bs-empty' },
+              h('div', { style: { marginBottom: '10px' } }, (t ? t('renderFailed') : 'Page failed to render') + '：' + message),
+              h('button', { type: 'button', className: 'bs-btn', onClick: () => this.setState({ error: null }) }, t ? t('retry') : 'Retry'),
+            ),
+          );
+        }
+        return this.props.children;
+      }
+    }
+
+    function makePage(t) {
       return function BlogStudioPage() {
         const [settings, setSettings] = useState(() => cleanSettings(null));
         const [status, setStatus] = useState({ phase: 'loading', configured: false, valid: false, login: '', source: 'none', mode: 'remote', vaultPath: '', sync: null });
@@ -2379,13 +2414,16 @@ window.__ModuleLoader__.load({
 
     //#region registration
     function apply(ctx) {
-      ctx.effect(() => ctx.locale.register(NS, { zh: DICT_ZH, en: DICT_EN }), 'blog-studio: dictionaries');
+      ctx.effect(() => ctx.locale.register(NS, { zh: DICT_ZH, en: DICT_EN }), 'brain: dictionaries');
       const t = ctx.locale.bind(NS);
-      const Page = makePage();
+      const Page = makePage(t);
+      const GuardedPage = function BrainGuardedPage() {
+        return h(PageBoundary, { t }, h(Page));
+      };
 
       ctx.effect(() => {
         const disposers = [
-          ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID, locale: NS }, Page)),
+          ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID, locale: NS }, GuardedPage)),
           ctx.slots.inject('sidebar.panellist', () =>
             ctx.slots.register(
               {
@@ -2404,7 +2442,7 @@ window.__ModuleLoader__.load({
             if (typeof dispose === 'function') dispose();
           }
         };
-      }, 'blog-studio: panel');
+      }, 'brain: panel');
     }
 
     return { name: '@local/brain', inject: ['slots', 'locale'], apply };
