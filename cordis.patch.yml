@@ -7,8 +7,9 @@
     - id: brain
       name: '@local/brain'
       config:
-        owner: supeBam
-        repo: brain
+        # Set these in the panel's settings (or here) to your own vault.
+        owner: ''
+        repo: ''
         branch: main
         inbox: inbox
         siteUrl: ''

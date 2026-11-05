@@ -295,8 +295,8 @@ window.__ModuleLoader__.load({
        and the agent tools read one source of truth; the page only caches a copy
        for rendering. The token never appears here. */
     const DEFAULT_SETTINGS = {
-      owner: 'supeBam',
-      repo: 'brain',
+      owner: '',
+      repo: '',
       branch: 'main',
       inbox: 'inbox',
       siteUrl: '',
@@ -1330,13 +1330,13 @@ window.__ModuleLoader__.load({
               'div',
               { className: 'bs-form-row' },
               h('span', { className: 'bs-form-label' }, t('owner')),
-              h('input', { className: 'bs-input', value: form.owner, onChange: set('owner'), spellCheck: false, placeholder: 'supeBam' }),
+              h('input', { className: 'bs-input', value: form.owner, onChange: set('owner'), spellCheck: false, placeholder: 'your-github-name' }),
             ),
             h(
               'div',
               { className: 'bs-form-row' },
               h('span', { className: 'bs-form-label' }, t('repo')),
-              h('input', { className: 'bs-input', value: form.repo, onChange: set('repo'), spellCheck: false, placeholder: 'brain' }),
+              h('input', { className: 'bs-input', value: form.repo, onChange: set('repo'), spellCheck: false, placeholder: 'brain (your vault repository)' }),
             ),
             h(
               'div',

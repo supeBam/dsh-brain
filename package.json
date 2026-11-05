@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "license": "MIT",
   "private": true,
-  "description": "Write notes in the left sidebar, let the agent file what matters, and keep it all as an Obsidian-compatible Markdown vault in GitHub.",
+  "description": "DeepSeek Harness sidebar second brain: a local-first Markdown vault, Obsidian-compatible, auto-synced to your own private GitHub repository.",
   "type": "module",
   "icon": "icon.svg",
   "exports": {
@@ -27,5 +27,21 @@
       "platform": "web",
       "immediately": true
     }
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/supeBam/dsh-brain.git"
+  },
+  "homepage": "https://github.com/supeBam/dsh-brain",
+  "bugs": {
+    "url": "https://github.com/supeBam/dsh-brain/issues"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "markdown",
+    "obsidian",
+    "second-brain",
+    "notes"
+  ]
 }

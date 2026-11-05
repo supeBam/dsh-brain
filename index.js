@@ -22,8 +22,8 @@ const ROUTE = '/brain/api';
 const TOKEN_KEY = 'brain';
 
 const DEFAULTS = Object.freeze({
-  owner: 'supeBam',
-  repo: 'brain',
+  owner: '',
+  repo: '',
   branch: 'main',
   inbox: 'inbox',
   siteUrl: '',
@@ -48,8 +48,7 @@ function normalizeConfig(raw) {
       if (typeof raw[key] === 'string') base[key] = raw[key].trim();
     }
   }
-  if (base.owner === '') base.owner = DEFAULTS.owner;
-  if (base.repo === '') base.repo = DEFAULTS.repo;
+  /* owner/repo are intentionally empty: each install names its own vault. */
   if (base.branch === '') base.branch = DEFAULTS.branch;
   if (base.inbox === '') base.inbox = DEFAULTS.inbox;
   if (base.vaultPath === '') base.vaultPath = DEFAULTS.vaultPath;
