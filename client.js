@@ -24,6 +24,7 @@ window.__ModuleLoader__.load({
     const PANEL_ID = 'brain';
     const API_ROUTE = '/brain/api';
     const DRAFTS_KEY = 'dsh.brain.v1:drafts';
+    const GROUPS_KEY = 'dsh.brain.v1:groups';
 
     //#region dictionaries
     const DICT_ZH = {
@@ -36,6 +37,8 @@ window.__ModuleLoader__.load({
       drafts: '本地草稿',
       posts: '收件箱',
       emptyDrafts: '还没有本地草稿',
+      draftsHint: '编辑器里未提交、或已打开过的笔记会留在这里，刷新也不会丢',
+      inboxHint: '仓库 inbox/ 目录里的笔记：新笔记默认提交到这里，整理后再移到 notes/ 或 clips/',
       emptyPosts: '收件箱还是空的',
       untitled: '未命名',
       titlePlaceholder: '这条笔记叫什么',
@@ -158,6 +161,8 @@ window.__ModuleLoader__.load({
       drafts: 'Local drafts',
       posts: 'Inbox',
       emptyDrafts: 'No local drafts yet',
+      draftsHint: 'Notes open in this editor that are not committed yet; they survive a refresh',
+      inboxHint: 'Notes in the repository inbox/ folder: new captures land here before you file them into notes/ or clips/',
       emptyPosts: 'The inbox is empty',
       untitled: 'Untitled',
       titlePlaceholder: 'Note title',
@@ -293,6 +298,24 @@ window.__ModuleLoader__.load({
       return base;
     }
     //#endregion
+
+    function readCollapsed() {
+      try {
+        const raw = window.localStorage.getItem(GROUPS_KEY);
+        const parsed = raw === null ? {} : JSON.parse(raw);
+        return { drafts: parsed.drafts === true, inbox: parsed.inbox === true };
+      } catch (error) {
+        return { drafts: false, inbox: false };
+      }
+    }
+
+    function writeCollapsed(value) {
+      try {
+        window.localStorage.setItem(GROUPS_KEY, JSON.stringify(value));
+      } catch (error) {
+        /* Storage unavailable: collapsing still works for this mount. */
+      }
+    }
 
     //#region helpers
     function pad(value) {
@@ -986,8 +1009,12 @@ window.__ModuleLoader__.load({
 .bs-search:focus{border-color:var(--dsw-alias-label-secondary)}
 .bs-search::placeholder{color:var(--dsw-alias-label-secondary)}
 .bs-side-scroll{flex:auto;min-height:0;overflow-y:auto;padding:4px 8px 18px;scrollbar-gutter:stable}
-.bs-group{display:flex;align-items:center;gap:6px;margin:10px 4px 4px;color:var(--dsw-alias-label-secondary);font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
-.bs-group-count{font-weight:400;letter-spacing:0;text-transform:none;opacity:.75}
+.bs-group{display:flex;align-items:center;gap:6px;width:100%;margin:10px 0 4px;padding:4px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;text-align:left;cursor:pointer}
+.bs-group:hover{background:var(--dsw-alias-interactive-bg-hover,var(--dsw-alias-bg-layer-2));color:var(--dsw-alias-label-primary)}
+.bs-chevron{flex:none;display:inline-block;width:9px;font-size:12px;line-height:1;transition:transform .15s ease;transform:rotate(0)}
+.bs-chevron-open{transform:rotate(90deg)}
+.bs-group-label{flex:auto;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.bs-group-count{flex:none;margin-left:auto;font-weight:400;letter-spacing:0;text-transform:none;opacity:.75}
 .bs-item{display:flex;flex-direction:column;gap:2px;width:100%;padding:7px 9px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;text-align:left;cursor:pointer;transition:background-color .15s ease}
 .bs-item:hover{background:var(--dsw-alias-interactive-bg-hover,var(--dsw-alias-bg-layer-2))}
 .bs-item-on,.bs-item-on:hover{background:color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent)}
@@ -1001,6 +1028,9 @@ window.__ModuleLoader__.load({
 .bs-main{display:flex;flex:auto;flex-direction:column;min-width:0;min-height:0}
 .bs-meta{display:flex;flex:none;flex-direction:column;gap:8px;padding:12px 16px 10px;border-bottom:1px solid var(--dsw-alias-border-l1)}
 .bs-title-input{box-sizing:border-box;width:100%;padding:0;border:0;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:19px;font-weight:600;line-height:26px;outline:none}
+.bs-title-row{display:flex;align-items:center;gap:10px;min-width:0}
+.bs-title-input{flex:auto;min-width:0;width:auto}
+.bs-title-dirty{flex:none;padding:0 8px;border-radius:999px;background:color-mix(in srgb, var(--dsw-alias-state-warn-primary) 15%, transparent);color:var(--dsw-alias-state-warn-primary);font-size:10.5px;line-height:18px;white-space:nowrap}
 .bs-title-input::placeholder{color:var(--dsw-alias-label-secondary)}
 .bs-fields{display:flex;flex-wrap:wrap;gap:6px 8px}
 .bs-field{display:flex;flex:none;align-items:center;gap:5px;min-width:0}
@@ -1434,12 +1464,14 @@ window.__ModuleLoader__.load({
         const [view, setView] = useState('write');
         const [mode, setMode] = useState('split');
         const [query, setQuery] = useState('');
+        const [collapsed, setCollapsed] = useState(readCollapsed);
         const [notice, setNotice] = useState(null);
         const [busy, setBusy] = useState('');
         const [confirmDelete, setConfirmDelete] = useState(false);
         const textRef = useRef(null);
         const previewRef = useRef(null);
         const bootstrapped = useRef(false);
+        const backfilled = useRef(new Set());
 
         // Persist drafts shortly after they settle.
         useEffect(() => {
@@ -1463,6 +1495,52 @@ window.__ModuleLoader__.load({
         useEffect(() => {
           setConfirmDelete(false);
         }, [activeId]);
+
+        useEffect(() => {
+          writeCollapsed(collapsed);
+        }, [collapsed]);
+
+        /*
+         * Drafts opened before the fingerprint existed have no baseline, so a
+         * modified note would look clean. Read the file once, derive the
+         * baseline from its content, and let the comparison speak.
+         */
+        useEffect(() => {
+          if (status.phase !== 'ready') return;
+          const pending = drafts.filter(
+            (item) =>
+              item.remotePath !== '' &&
+              item.publishedFingerprint === '' &&
+              backfilled.current.has(item.id) === false,
+          );
+          if (pending.length === 0) return;
+          const batch = pending.slice(0, 5);
+          for (const item of batch) backfilled.current.add(item.id);
+          void (async () => {
+            for (const item of batch) {
+              try {
+                const data = await callHost('note.read', { path: item.remotePath });
+                const parsed = parseFrontMatter(data.text);
+                const baseline = draftFingerprint({
+                  title: typeof parsed.data.title === 'string' ? parsed.data.title : item.title,
+                  type: NOTE_TYPES.includes(parsed.data.type) ? parsed.data.type : 'thought',
+                  tags: Array.isArray(parsed.data.tags)
+                    ? parsed.data.tags.join(', ')
+                    : typeof parsed.data.tags === 'string'
+                      ? parsed.data.tags
+                      : '',
+                  source: typeof parsed.data.source === 'string' ? parsed.data.source : '',
+                  body: parsed.body.replace(/^\n+/, ''),
+                });
+                setDrafts((list) =>
+                  list.map((draft) => (draft.id === item.id ? { ...draft, publishedFingerprint: baseline } : draft)),
+                );
+              } catch (error) {
+                /* Unavailable or deleted: leave the state unknown instead of guessing. */
+              }
+            }
+          })();
+        }, [status.phase, drafts]);
 
         useEffect(() => {
           if (notice === null) return undefined;
@@ -1958,6 +2036,21 @@ window.__ModuleLoader__.load({
           return posts.items.filter((item) => item.name.toLowerCase().includes(needle) || item.path.toLowerCase().includes(needle));
         }, [posts.items, query]);
 
+        const groupHeader = (key, label, count, hint) =>
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'bs-group',
+              title: hint || '',
+              'aria-expanded': !collapsed[key],
+              onClick: () => setCollapsed((current) => ({ ...current, [key]: !current[key] })),
+            },
+            h('span', { className: 'bs-chevron' + (collapsed[key] ? '' : ' bs-chevron-open'), 'aria-hidden': true }, '›'),
+            h('span', { className: 'bs-group-label' }, label),
+            h('span', { className: 'bs-group-count' }, count),
+          );
+
         const renderSideItem = (item, kind) => {
           const selected = active !== null && active.id === item.id && kind === 'draft';
           const itemDirty =
@@ -2085,31 +2178,27 @@ window.__ModuleLoader__.load({
                   h(
                     'div',
                     { className: 'bs-side-scroll' },
-                    h(
-                      'div',
-                      { className: 'bs-group' },
-                      t('drafts'),
-                      h('span', { className: 'bs-group-count' }, '(' + drafts.length + ')'),
-                    ),
-                    filteredDrafts.length === 0 ? h('div', { className: 'bs-empty' }, t('emptyDrafts')) : filteredDrafts.map((item) => renderSideItem(item, 'draft')),
-                    h(
-                      'div',
-                      { className: 'bs-group' },
-                      t('posts'),
-                      h('span', { className: 'bs-group-count' }, posts.phase === 'loading' ? '…' : '(' + posts.items.length + ')'),
-                    ),
-                    status.phase === 'ready' && !status.configured
-                      ? h(
-                          'div',
-                          { className: 'bs-empty' },
-                          h('div', { style: { marginBottom: '8px' } }, t('tokenMissing')),
-                          h('button', { type: 'button', className: 'bs-btn', onClick: () => setView('settings') }, t('settings')),
-                        )
-                      : posts.phase === 'error'
-                        ? h('div', { className: 'bs-empty' }, t('listFailed', { msg: posts.error }))
-                        : filteredPosts.length === 0
-                          ? h('div', { className: 'bs-empty' }, t('emptyPosts'))
-                          : filteredPosts.map((item) => renderSideItem(item, 'post')),
+                    groupHeader('drafts', t('drafts'), '(' + drafts.length + ')', t('draftsHint')),
+                    collapsed.drafts
+                      ? null
+                      : filteredDrafts.length === 0
+                        ? h('div', { className: 'bs-empty' }, t('emptyDrafts'))
+                        : filteredDrafts.map((item) => renderSideItem(item, 'draft')),
+                    groupHeader('inbox', t('posts'), posts.phase === 'loading' ? '…' : '(' + posts.items.length + ')', t('inboxHint')),
+                    collapsed.inbox
+                      ? null
+                      : status.phase === 'ready' && !status.configured
+                        ? h(
+                            'div',
+                            { className: 'bs-empty' },
+                            h('div', { style: { marginBottom: '8px' } }, t('tokenMissing')),
+                            h('button', { type: 'button', className: 'bs-btn', onClick: () => setView('settings') }, t('settings')),
+                          )
+                        : posts.phase === 'error'
+                          ? h('div', { className: 'bs-empty' }, t('listFailed', { msg: posts.error }))
+                          : filteredPosts.length === 0
+                            ? h('div', { className: 'bs-empty' }, t('emptyPosts'))
+                            : filteredPosts.map((item) => renderSideItem(item, 'post')),
                   ),
                 ),
                 h(
@@ -2126,13 +2215,18 @@ window.__ModuleLoader__.load({
                         h(
                           'div',
                           { className: 'bs-meta', key: 'meta' },
-                          h('input', {
-                            className: 'bs-title-input',
-                            value: active.title,
-                            placeholder: t('titlePlaceholder'),
-                            'aria-label': t('titlePlaceholder'),
-                            onChange: setField('title'),
-                          }),
+                          h(
+                            'div',
+                            { className: 'bs-title-row' },
+                            h('input', {
+                              className: 'bs-title-input',
+                              value: active.title,
+                              placeholder: t('titlePlaceholder'),
+                              'aria-label': t('titlePlaceholder'),
+                              onChange: setField('title'),
+                            }),
+                            activeDirty ? h('span', { className: 'bs-title-dirty' }, t('dirty')) : null,
+                          ),
                           h(
                             'div',
                             { className: 'bs-fields' },
