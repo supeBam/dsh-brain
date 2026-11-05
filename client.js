@@ -85,6 +85,9 @@ window.__ModuleLoader__.load({
       confirmDelete: '确认删除',
       deleteTitle: '从仓库删除这篇文章？',
       publishOk: '已提交：{path}',
+      publishAll: '全部提交（{n}）',
+      publishAllOk: '已提交 {n} 篇',
+      publishAllPartial: '提交了 {ok} 篇，{failed} 篇失败：{msg}',
       publishedTo: '已提交到 {path}',
       failed: '操作失败：{msg}',
       loadFailed: '读取失败：{msg}',
@@ -209,6 +212,9 @@ window.__ModuleLoader__.load({
       confirmDelete: 'Delete',
       deleteTitle: 'Delete this post from the repository?',
       publishOk: 'Committed: {path}',
+      publishAll: 'Commit all ({n})',
+      publishAllOk: 'Committed {n} notes',
+      publishAllPartial: 'Committed {ok}, {failed} failed: {msg}',
       publishedTo: 'Committed to {path}',
       failed: 'Failed: {msg}',
       loadFailed: 'Could not load: {msg}',
@@ -1728,57 +1734,77 @@ window.__ModuleLoader__.load({
           return `https://github.com/${settings.owner}/${settings.repo}/blob/${settings.branch}/${active.remotePath}`;
         }, [active, settings.owner, settings.repo, settings.branch]);
 
-        const publish = useCallback(async () => {
-          if (active === null) return;
+        const repoReady = () =>
+          settings.owner.trim() !== '' && settings.repo.trim() !== '' && settings.branch.trim() !== '';
+
+        const describeDraft = (draft) => {
+          const title = draft.title.trim() !== '' ? draft.title.trim() : t('untitled');
+          const slug = draft.slug.trim() !== '' ? draft.slug.trim() : slugify(title) || 'note';
+          const parts = stampToParts(draft.date);
+          const dated = draft.remotePath !== '' ? '' : parts.date + '-';
+          const dir = settings.inbox.trim().replace(/^\/+|\/+$/g, '');
+          const path =
+            draft.remotePath !== ''
+              ? draft.remotePath
+              : (dir === '' ? '' : dir + '/') + dated + slug + '.md';
+          const content = buildNoteDocument(
+            {
+              title,
+              type: draft.type,
+              created: isoFromStamp(draft.date),
+              tags: splitList(draft.tags),
+              source: draft.source.trim(),
+            },
+            draft.body,
+          );
+          const message = (draft.remotePath !== '' ? 'brain: update ' : 'brain: add ') + title;
+          return { title, slug, path, content, message };
+        };
+
+        /** Write one draft to the vault and record what was written. */
+        const publishDraft = useCallback(
+          async (draft) => {
+            const built = describeDraft(draft);
+            const data = await callHost('note.write', {
+              path: built.path,
+              content: built.content,
+              message: built.message,
+              sha: draft.remoteSha || undefined,
+            });
+            patch(draft.id, {
+              title: built.title,
+              slug: built.slug,
+              remotePath: data.path,
+              remoteSha: data.sha,
+              remoteUrl: typeof data.url === 'string' ? data.url : draft.remoteUrl,
+              publishedFingerprint: draftFingerprint({ ...draft, title: built.title }),
+              publishedAt: Date.now(),
+            });
+            return data;
+          },
+          [settings, patch, t],
+        );
+
+        const guardSubmit = () => {
           if (!status.configured) {
             report('error', t('tokenMissing'));
             setView('settings');
-            return;
+            return false;
           }
-          const owner = settings.owner.trim();
-          const repo = settings.repo.trim();
-          const branch = settings.branch.trim();
-          if (owner === '' || repo === '' || branch === '') {
+          if (!repoReady()) {
             report('error', t('needRepo'));
             setView('settings');
-            return;
+            return false;
           }
+          return true;
+        };
+
+        const publish = useCallback(async () => {
+          if (active === null) return;
+          if (!guardSubmit()) return;
           setBusy('publish');
           try {
-            const title = active.title.trim() !== '' ? active.title.trim() : t('untitled');
-            const slug = active.slug.trim() !== '' ? active.slug.trim() : slugify(title) || 'note';
-            const parts = stampToParts(active.date);
-            const dated = active.remotePath !== '' ? '' : parts.date + '-';
-            const dir = settings.inbox.trim().replace(/^\/+|\/+$/g, '');
-            const path = active.remotePath !== ''
-              ? active.remotePath
-              : (dir === '' ? '' : dir + '/') + dated + slug + '.md';
-            const body = buildNoteDocument(
-              {
-                title,
-                type: active.type,
-                created: isoFromStamp(active.date),
-                tags: splitList(active.tags),
-                source: active.source.trim(),
-              },
-              active.body,
-            );
-            const message = (active.remotePath !== '' ? 'brain: update ' : 'brain: add ') + title;
-            const data = await callHost('note.write', {
-              path,
-              content: body,
-              message,
-              sha: active.remoteSha || undefined,
-            });
-            patch(active.id, {
-              title,
-              slug,
-              remotePath: data.path,
-              remoteSha: data.sha,
-              remoteUrl: typeof data.url === 'string' ? data.url : active.remoteUrl,
-              publishedFingerprint: draftFingerprint({ ...active, title }),
-              publishedAt: Date.now(),
-            });
+            const data = await publishDraft(active);
             report('ok', t('publishOk', { path: data.path }));
             void loadPosts();
             window.setTimeout(() => void refreshStatus(), 4500);
@@ -1787,7 +1813,46 @@ window.__ModuleLoader__.load({
           } finally {
             setBusy('');
           }
-        }, [active, status.configured, settings, patch, report, reportError, t, loadPosts]);
+        }, [active, status.configured, settings, publishDraft, report, reportError, t, loadPosts, refreshStatus]);
+
+        /** Notes whose editor content differs from what the vault holds. */
+        const pendingDrafts = useMemo(() => {
+          return drafts.filter((draft) => {
+            if (isBlank(draft) && draft.remotePath === '') return false;
+            if (draft.remotePath === '') return true;
+            if (draft.publishedFingerprint === '') return true;
+            return draft.publishedFingerprint !== draftFingerprint(draft);
+          });
+        }, [drafts]);
+
+        const publishAll = useCallback(async () => {
+          if (pendingDrafts.length === 0) return;
+          if (!guardSubmit()) return;
+          setBusy('publishAll');
+          let done = 0;
+          let firstError = null;
+          for (const draft of pendingDrafts) {
+            try {
+              await publishDraft(draft);
+              done += 1;
+            } catch (error) {
+              if (firstError === null) firstError = error;
+            }
+          }
+          try {
+            await callHost('sync.now');
+          } catch (error) {
+            /* the sync badge reports the failure */
+          }
+          await refreshStatus();
+          void loadPosts();
+          if (firstError === null) {
+            report('ok', t('publishAllOk', { n: done }));
+          } else {
+            report('error', t('publishAllPartial', { ok: done, failed: pendingDrafts.length - done, msg: firstError.message }));
+          }
+          setBusy('');
+        }, [pendingDrafts, status.configured, settings, publishDraft, report, refreshStatus, loadPosts, t]);
 
         const deleteRemote = useCallback(async () => {
           if (active === null || active.remotePath === '') return;
@@ -2523,13 +2588,26 @@ window.__ModuleLoader__.load({
                     { type: 'button', className: 'bs-ico', key: 'settings', title: t('settings'), 'aria-label': t('settings'), onClick: () => setView('settings') },
                     glyphGear(),
                   ),
+                  pendingDrafts.length > 0
+                    ? h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'bs-btn',
+                          key: 'publishAll',
+                          disabled: busy === 'publishAll' || busy === 'publish',
+                          onClick: () => void publishAll(),
+                        },
+                        busy === 'publishAll' ? t('publishing') : t('publishAll', { n: pendingDrafts.length }),
+                      )
+                    : null,
                   h(
                     'button',
                     {
                       type: 'button',
                       className: 'bs-btn bs-btn-primary',
                       key: 'publish',
-                      disabled: active === null || busy === 'publish',
+                      disabled: active === null || busy === 'publish' || busy === 'publishAll',
                       onClick: () => void publish(),
                     },
                     glyphCloud(),

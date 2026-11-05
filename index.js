@@ -499,6 +499,30 @@ export function apply(ctx, rawConfig) {
   }
   //#endregion
 
+  /*
+   * Safety net: an edit made in Obsidian, or a write whose debounce was lost to
+   * a restart, would otherwise sit uncommitted forever. Heal on load and once a
+   * minute, and stay out of the way while a normal sync is pending or running.
+   */
+  ctx.effect(() => {
+    const heal = async () => {
+      if (syncState.running || syncState.pending) return;
+      if ((await vaultReady()) === false || (await hasGit()) === false) return;
+      try {
+        const porcelain = await git(['-c', 'core.quotepath=false', 'status', '--porcelain']);
+        if (porcelain.trim() !== '') await runSync();
+      } catch (error) {
+        /* a broken repository must not break the page */
+      }
+    };
+    const startup = setTimeout(() => void heal(), 1500);
+    const timer = setInterval(() => void heal(), 60000);
+    return () => {
+      clearTimeout(startup);
+      clearInterval(timer);
+    };
+  }, 'brain: safety sync');
+
   //#region remote (GitHub Contents API)
   async function gh(token, apiPath, init = {}) {
     const headers = {
