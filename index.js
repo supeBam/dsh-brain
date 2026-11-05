@@ -417,6 +417,37 @@ export function apply(ctx, rawConfig) {
     }, SYNC_DEBOUNCE_MS);
   }
 
+  /** Turn `git status --porcelain` into a commit title/body that says what moved. */
+  function describeChanges(porcelain) {
+    const lines = String(porcelain || '')
+      .split('\n')
+      .map((line) => line.replace(/\s+$/, ''))
+      .filter((line) => line !== '');
+    const parsed = lines.map((line) => {
+      const code = line.slice(0, 2);
+      const raw = line.slice(3).trim();
+      const path = raw.includes(' -> ') ? raw.split(' -> ').pop() : raw;
+      const verb = code.includes('?') || code.includes('A') ? 'add' : code.includes('D') ? 'remove' : 'update';
+      return { verb, path };
+    });
+    if (parsed.length === 0) return null;
+    if (parsed.length === 1) {
+      return { title: `brain: ${parsed[0].verb} ${parsed[0].path}`, body: '' };
+    }
+    const counts = { add: 0, update: 0, remove: 0 };
+    for (const change of parsed) counts[change.verb] += 1;
+    const summary = [
+      counts.add > 0 ? `+${counts.add}` : '',
+      counts.update > 0 ? `~${counts.update}` : '',
+      counts.remove > 0 ? `-${counts.remove}` : '',
+    ]
+      .filter((part) => part !== '')
+      .join(' ');
+    const shown = parsed.slice(0, 12).map((change) => `${change.verb} ${change.path}`);
+    if (parsed.length > 12) shown.push(`… 另有 ${parsed.length - 12} 个文件`);
+    return { title: `brain: sync ${parsed.length} files (${summary})`, body: shown.join('\n') };
+  }
+
   async function runSync() {
     if (syncState.running) return syncState;
     if ((await vaultReady()) === false || (await hasGit()) === false) {
@@ -428,9 +459,12 @@ export function apply(ctx, rawConfig) {
     let ok = true;
     try {
       await git(['add', '-A']);
-      const porcelain = await git(['status', '--porcelain']);
-      if (porcelain.trim() !== '') {
-        await git(['commit', '-m', `brain: sync ${new Date().toISOString().replace('T', ' ').slice(0, 19)}`]);
+      const porcelain = await git(['-c', 'core.quotepath=false', 'status', '--porcelain']);
+      const change = describeChanges(porcelain);
+      if (change !== null) {
+        const args = ['commit', '-m', change.title];
+        if (change.body !== '') args.push('-m', change.body);
+        await git(args);
       }
       try {
         await git(['pull', '--rebase', '--autostash'], 30000);
