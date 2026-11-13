@@ -9,7 +9,7 @@
  * clone falls back to the GitHub Contents API.
  *
  * Three things never reach the page: the access token (credentials record
- * `brain`), the git plumbing, and the agent tools (`brain_save`,
+ * `brain/github`), the git plumbing, and the agent tools (`brain_save`,
  * `brain_search`).
  */
 import { execFile } from 'node:child_process';
@@ -19,7 +19,7 @@ import path from 'node:path';
 
 const API = 'https://api.github.com';
 const ROUTE = '/brain/api';
-const TOKEN_KEY = 'brain';
+const TOKEN_KEY = 'brain/github';
 
 const DEFAULTS = Object.freeze({
   owner: '',
@@ -213,18 +213,16 @@ export function apply(ctx, rawConfig) {
   let syncState = { at: 0, ok: true, message: '', pending: false, running: false };
 
   /**
-   * The credentials store may scope a record under `<scope>/<key>` (we have
-   * observed `brain/github` for a key written as `brain`), and the scope can
-   * differ across restarts. Rather than guess the format, enumerate records and
-   * accept every address that belongs to this plugin.
+   * Harness requires `<scope>/<id>` on startup. Prefer our canonical key
+   * and keep reading valid records under the same scope for compatibility.
    */
   async function tokenKeys() {
-    const keys = [TOKEN_KEY, `${TOKEN_KEY}/github`];
+    const keys = [TOKEN_KEY];
     try {
       const records = await credentials.listRecords();
       for (const entry of records) {
         const key = String(entry?.key ?? '');
-        if (key === TOKEN_KEY || key.startsWith(`${TOKEN_KEY}/`)) {
+        if (/^brain\/[a-z][a-z0-9-]*$/.test(key)) {
           if (keys.includes(key) === false) keys.push(key);
         }
       }
@@ -761,7 +759,8 @@ export function apply(ctx, rawConfig) {
     },
 
     async 'token.clear'() {
-      await credentials.deleteRecord(TOKEN_KEY);
+      const { key } = await resolveToken();
+      await credentials.deleteRecord(key || TOKEN_KEY);
       return { cleared: true };
     },
 
