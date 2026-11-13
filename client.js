@@ -156,6 +156,20 @@ window.__ModuleLoader__.load({
       confirmDiscard: '确认删除草稿',
       discardTitle: '删除这条本地草稿？仓库里的文章不受影响',
       renderFailed: '页面渲染出错',
+      presetSection: '快捷新建（标题规则）',
+      presetName: '按钮名称',
+      presetTemplate: '标题规则',
+      presetType: '类型',
+      presetTags: '标签',
+      presetAdd: '添加规则',
+      presetRemove: '删掉这条规则',
+      presetEmpty: '还没有规则。加一条之后，顶部会出现同名按钮，点一下就按规则新建一篇草稿。',
+      presetNamePh: '每日思考-时间',
+      presetTemplatePh: '每日思考-{YYYY} {MM} {DD} {HH}:{mm}',
+      presetTagsPh: '思考, 每日',
+      presetPreview: '现在会生成：{title}',
+      presetHint: '规则里可以写占位符：{YYYY} 年 · {MM} 月 · {DD} 日 · {HH} 时 · {mm} 分 · {ss} 秒 · {M} 月(不补零) · {D} 日(不补零) · {date} 日期 · {time} 时间 · {datetime} 日期时间 · {weekday} 星期。其余文字原样保留。',
+      presetOpenHint: '按规则新建：{title}',
     };
 
     const DICT_EN = {
@@ -287,6 +301,20 @@ window.__ModuleLoader__.load({
       confirmDiscard: 'Discard draft',
       discardTitle: 'Discard this local draft? The repository file is untouched',
       renderFailed: 'Page failed to render',
+      presetSection: 'Quick create (title rules)',
+      presetName: 'Button label',
+      presetTemplate: 'Title rule',
+      presetType: 'Type',
+      presetTags: 'Tags',
+      presetAdd: 'Add rule',
+      presetRemove: 'Remove this rule',
+      presetEmpty: 'No rules yet. Add one and a button with that name appears on top; clicking it opens a draft titled by the rule.',
+      presetNamePh: 'Daily thought',
+      presetTemplatePh: 'Daily thought-{YYYY} {MM} {DD} {HH}:{mm}',
+      presetTagsPh: 'thought, daily',
+      presetPreview: 'Creates: {title}',
+      presetHint: 'Placeholders: {YYYY} year · {MM} month · {DD} day · {HH} hour · {mm} minute · {ss} second · {M} month (no padding) · {D} day (no padding) · {date} date · {time} time · {datetime} date+time · {weekday} weekday. Everything else stays as written.',
+      presetOpenHint: 'Creates by rule: {title}',
     };
     //#endregion
 
@@ -301,14 +329,19 @@ window.__ModuleLoader__.load({
       inbox: 'inbox',
       siteUrl: '',
       vaultPath: '~/brain',
+      presets: [],
     };
 
     function cleanSettings(value) {
       const base = { ...DEFAULT_SETTINGS };
-      if (value === null || typeof value !== 'object') return base;
+      if (value === null || typeof value !== 'object') {
+        base.presets = [];
+        return base;
+      }
       for (const key of Object.keys(base)) {
         if (typeof value[key] === 'string') base[key] = value[key];
       }
+      base.presets = cleanPresets(value.presets);
       return base;
     }
     //#endregion
@@ -368,6 +401,64 @@ window.__ModuleLoader__.load({
         .split(/[,，]/)
         .map((item) => item.trim())
         .filter((item) => item !== '');
+    }
+
+    function makePresetId() {
+      return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    }
+
+    /**
+     * Quick-create rules: a button label plus the title template it stamps on a
+     * fresh draft. A rule without a template is meaningless and is dropped.
+     */
+    function cleanPresets(value) {
+      if (!Array.isArray(value)) return [];
+      const list = [];
+      for (const item of value) {
+        if (item === null || typeof item !== 'object') continue;
+        const template = typeof item.template === 'string' ? item.template.trim() : '';
+        if (template === '') continue;
+        const label = (typeof item.label === 'string' ? item.label.trim() : '') || template;
+        list.push({
+          id: typeof item.id === 'string' && item.id !== '' ? item.id : makePresetId(),
+          label,
+          template,
+          type: NOTE_TYPES.includes(item.type) ? item.type : 'thought',
+          tags: typeof item.tags === 'string' ? item.tags.trim() : '',
+        });
+      }
+      return list;
+    }
+
+    /**
+     * Expand a title rule into a real title: `{YYYY} {MM} {DD} {HH}:{mm}`
+     * becomes `2026 11 13 17:22`. Unknown placeholders stay as written.
+     */
+    function renderTitleTemplate(template, date) {
+      const day = date instanceof Date && Number.isFinite(date.getTime()) ? date : new Date();
+      const pad2 = (value) => String(value).padStart(2, '0');
+      const year = day.getFullYear();
+      const month = day.getMonth() + 1;
+      const dateText = `${year}-${pad2(month)}-${pad2(day.getDate())}`;
+      const timeText = `${pad2(day.getHours())}:${pad2(day.getMinutes())}`;
+      const map = {
+        YYYY: String(year),
+        MM: pad2(month),
+        DD: pad2(day.getDate()),
+        HH: pad2(day.getHours()),
+        mm: pad2(day.getMinutes()),
+        ss: pad2(day.getSeconds()),
+        M: String(month),
+        D: String(day.getDate()),
+        H: String(day.getHours()),
+        date: dateText,
+        time: timeText,
+        datetime: `${dateText} ${timeText}`,
+        weekday: '周' + '日一二三四五六'[day.getDay()],
+      };
+      return String(template || '').replace(/\{([A-Za-z]+)\}/g, (whole, key) =>
+        Object.prototype.hasOwnProperty.call(map, key) ? map[key] : whole,
+      );
     }
 
     function stampToParts(stamp) {
@@ -1097,6 +1188,14 @@ window.__ModuleLoader__.load({
 .bs-inline-state-ok{color:var(--dsw-alias-state-success-primary)}
 .bs-inline-state-bad{color:var(--dsw-alias-state-error-primary)}
 .bs-inline-state-warn{color:var(--dsw-alias-state-warn-primary)}
+.bs-btn-preset{border-color:color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent);color:var(--dsw-alias-brand-primary)}
+.bs-btn-preset:hover:enabled{background:color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent)}
+.bs-preset{margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.bs-preset:last-of-type{border-bottom:0}
+.bs-preset-row{display:grid;grid-template-columns:minmax(110px,0.9fr) minmax(160px,1.5fr) 96px minmax(90px,0.9fr) 30px;gap:6px;align-items:center}
+.bs-preset-row select.bs-input{height:30px;padding:0 6px}
+.bs-preset-del{width:30px;padding:0;font-size:15px;line-height:1;justify-content:center}
+.bs-preset-preview{margin:5px 0 0;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bs-md{position:relative;min-height:100%}
 .bs-preview h1,.bs-preview h2,.bs-preview h3,.bs-preview h4,.bs-preview h5,.bs-preview h6{margin:1.4em 0 .55em;font-weight:600;line-height:1.35}
 .bs-preview h1{font-size:1.62em;padding-bottom:.28em;border-bottom:1px solid var(--dsw-alias-border-l1)}
@@ -1145,7 +1244,7 @@ window.__ModuleLoader__.load({
 .bs-sync{flex:none;padding:1px 8px;border:0;border-radius:999px;background:color-mix(in srgb, var(--dsw-alias-state-success-primary) 14%, transparent);color:var(--dsw-alias-state-success-primary);font:inherit;font-size:10.5px;line-height:16px;cursor:pointer}
 .bs-sync-bad{background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent);color:var(--dsw-alias-state-error-primary)}
 .bs-sync-running{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
-@media (max-width:860px){.bs-side{width:200px}.bs-form-row{grid-template-columns:1fr}.bs-form-label{text-align:left}.bs-hint,.bs-row-actions{margin-left:0}}
+@media (max-width:860px){.bs-side{width:200px}.bs-form-row{grid-template-columns:1fr}.bs-form-label{text-align:left}.bs-hint,.bs-row-actions{margin-left:0}.bs-preset-row{grid-template-columns:1fr 1fr}.bs-preset-row .bs-preset-del{justify-self:start}}
 @media (max-width:640px){.bs-side{display:none}}
 `;
     //#endregion
@@ -1297,6 +1396,34 @@ window.__ModuleLoader__.load({
 
       const set = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
 
+      const presetList = Array.isArray(form.presets) ? form.presets : [];
+
+      const setPreset = (index, key) => (event) => {
+        const value = event.target.value;
+        setForm((current) => {
+          const list = Array.isArray(current.presets) ? current.presets : [];
+          return {
+            ...current,
+            presets: list.map((item, i) => (i === index ? { ...item, [key]: value } : item)),
+          };
+        });
+      };
+
+      const addPreset = () =>
+        setForm((current) => {
+          const list = Array.isArray(current.presets) ? current.presets : [];
+          return {
+            ...current,
+            presets: [...list, { id: makePresetId(), label: '', template: '', type: 'thought', tags: '' }],
+          };
+        });
+
+      const removePreset = (index) =>
+        setForm((current) => {
+          const list = Array.isArray(current.presets) ? current.presets : [];
+          return { ...current, presets: list.filter((_, i) => i !== index) };
+        });
+
       const tokenLine =
         status.configured === true
           ? status.valid === true
@@ -1363,6 +1490,74 @@ window.__ModuleLoader__.load({
               h('input', { className: 'bs-input', value: form.siteUrl, onChange: set('siteUrl'), spellCheck: false, placeholder: 'https://example.github.io' }),
             ),
             h('p', { className: 'bs-hint' }, t('obsidianHint')),
+          ),
+          h(
+            'section',
+            { className: 'bs-section' },
+            h('h2', { className: 'bs-section-title' }, t('presetSection')),
+            presetList.length === 0 ? h('p', { className: 'bs-hint' }, t('presetEmpty')) : null,
+            ...presetList.map((preset, index) =>
+              h(
+                'div',
+                { className: 'bs-preset', key: preset.id || 'p' + index },
+                h(
+                  'div',
+                  { className: 'bs-preset-row' },
+                  h('input', {
+                    className: 'bs-input',
+                    value: preset.label,
+                    placeholder: t('presetNamePh'),
+                    'aria-label': t('presetName'),
+                    spellCheck: false,
+                    onChange: setPreset(index, 'label'),
+                  }),
+                  h('input', {
+                    className: 'bs-input',
+                    value: preset.template,
+                    placeholder: t('presetTemplatePh'),
+                    'aria-label': t('presetTemplate'),
+                    spellCheck: false,
+                    onChange: setPreset(index, 'template'),
+                  }),
+                  h(
+                    'select',
+                    {
+                      className: 'bs-input',
+                      value: preset.type,
+                      'aria-label': t('presetType'),
+                      onChange: setPreset(index, 'type'),
+                    },
+                    ...NOTE_TYPES.map((key) => h('option', { key, value: key }, t('type.' + key))),
+                  ),
+                  h('input', {
+                    className: 'bs-input',
+                    value: preset.tags,
+                    placeholder: t('presetTagsPh'),
+                    'aria-label': t('presetTags'),
+                    spellCheck: false,
+                    onChange: setPreset(index, 'tags'),
+                  }),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'bs-btn bs-btn-quiet bs-preset-del',
+                      title: t('presetRemove'),
+                      'aria-label': t('presetRemove'),
+                      onClick: () => removePreset(index),
+                    },
+                    '×',
+                  ),
+                ),
+                h('p', { className: 'bs-preset-preview' }, t('presetPreview', { title: renderTitleTemplate(preset.template) })),
+              ),
+            ),
+            h(
+              'div',
+              { className: 'bs-row-actions' },
+              h('button', { type: 'button', className: 'bs-btn', onClick: addPreset }, t('presetAdd')),
+            ),
+            h('p', { className: 'bs-hint' }, t('presetHint')),
           ),
           h(
             'section',
@@ -1667,6 +1862,21 @@ window.__ModuleLoader__.load({
             if (textRef.current !== null) textRef.current.focus();
           });
         }, [drafts]);
+
+        /** Open a fresh draft whose title comes from a saved rule. */
+        const newPostWithPreset = useCallback((preset) => {
+          if (preset === null || preset === undefined) return;
+          const fresh = blankDraft();
+          fresh.title = renderTitleTemplate(preset.template);
+          if (NOTE_TYPES.includes(preset.type)) fresh.type = preset.type;
+          if (typeof preset.tags === 'string' && preset.tags.trim() !== '') fresh.tags = preset.tags.trim();
+          setDrafts((list) => [fresh, ...list]);
+          setActiveId(fresh.id);
+          setView('write');
+          window.requestAnimationFrame(() => {
+            if (textRef.current !== null) textRef.current.focus();
+          });
+        }, []);
 
         const removeDraft = useCallback(
           (id) => {
@@ -2657,6 +2867,20 @@ window.__ModuleLoader__.load({
                     { type: 'button', className: 'bs-btn', key: 'new', onClick: newPost },
                     glyphPlus(),
                     t('newPost'),
+                  ),
+                  ...settings.presets.map((preset) =>
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        className: 'bs-btn bs-btn-preset',
+                        key: 'preset-' + preset.id,
+                        title: t('presetOpenHint', { title: renderTitleTemplate(preset.template) }),
+                        onClick: () => newPostWithPreset(preset),
+                      },
+                      glyphPen(),
+                      preset.label,
+                    ),
                   ),
                   h(
                     'button',

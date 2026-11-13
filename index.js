@@ -28,10 +28,34 @@ const DEFAULTS = Object.freeze({
   inbox: 'inbox',
   siteUrl: '',
   vaultPath: '~/brain',
+  presets: [],
 });
 
 const NOTE_TYPES = ['thought', 'clip', 'quote', 'task'];
 const SYNC_DEBOUNCE_MS = 3000;
+
+/**
+ * Quick-create rules: a button label plus the title template it stamps on a
+ * new draft. The page renders the template, the host only stores it.
+ */
+function cleanPresets(raw) {
+  if (!Array.isArray(raw)) return [];
+  const list = [];
+  for (const item of raw) {
+    if (item === null || typeof item !== 'object') continue;
+    const template = typeof item.template === 'string' ? item.template.trim() : '';
+    if (template === '') continue;
+    const label = (typeof item.label === 'string' ? item.label.trim() : '') || template;
+    list.push({
+      id: typeof item.id === 'string' && item.id !== '' ? item.id : `p${list.length}`,
+      label,
+      template,
+      type: NOTE_TYPES.includes(item.type) ? item.type : 'thought',
+      tags: typeof item.tags === 'string' ? item.tags.trim() : '',
+    });
+  }
+  return list;
+}
 
 class GhError extends Error {
   constructor(status, message, hint) {
@@ -47,6 +71,9 @@ function normalizeConfig(raw) {
     for (const key of Object.keys(DEFAULTS)) {
       if (typeof raw[key] === 'string') base[key] = raw[key].trim();
     }
+    base.presets = cleanPresets(raw.presets);
+  } else {
+    base.presets = [];
   }
   /* owner/repo are intentionally empty: each install names its own vault. */
   if (base.branch === '') base.branch = DEFAULTS.branch;
@@ -745,6 +772,7 @@ export function apply(ctx, rawConfig) {
         inbox: cleanDir(typeof input.inbox === 'string' ? input.inbox : settings.inbox),
         siteUrl: typeof input.siteUrl === 'string' ? input.siteUrl.trim() : settings.siteUrl,
         vaultPath: typeof input.vaultPath === 'string' ? input.vaultPath.trim() : settings.vaultPath,
+        presets: cleanPresets(Array.isArray(input.presets) ? input.presets : settings.presets),
       };
       await editor.edit(entry, (current) => ({ ...current, ...next }));
       Object.assign(settings, next);

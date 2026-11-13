@@ -14,3 +14,11 @@
         inbox: inbox
         siteUrl: ''
         vaultPath: ~/brain
+        # Quick-create rules: each one puts a labelled button in the panel that
+        # opens a draft titled by the template, e.g.
+        #   - id: p0
+        #     label: '每日思考-时间'
+        #     template: '每日思考-{YYYY} {MM} {DD} {HH}:{mm}'
+        #     type: thought
+        #     tags: ''
+        presets: []
