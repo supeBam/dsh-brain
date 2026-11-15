@@ -19,6 +19,7 @@
         #   - id: p0
         #     label: '每日思考-时间'
         #     template: '每日思考-{YYYY} {MM} {DD} {HH}:{mm}'
+        #     body: '## 值得记录的事情'
         #     type: thought
         #     tags: ''
         presets: []

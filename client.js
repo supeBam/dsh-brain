@@ -168,6 +168,9 @@ window.__ModuleLoader__.load({
       presetTemplatePh: '每日思考-{YYYY} {MM} {DD} {HH}:{mm}',
       presetTagsPh: '思考, 每日',
       presetPreview: '现在会生成：{title}',
+      presetBody: '正文模板',
+      presetBodyHint: '留空则正文为空；同样支持占位符',
+      presetBodyPh: '## 值得记录的事情\n\n## 当时怎么想的，为什么要做这个决定\n\n## 今天学到了什么，明天准备改变什么',
       presetHint: '规则里可以写占位符：{YYYY} 年 · {MM} 月 · {DD} 日 · {HH} 时 · {mm} 分 · {ss} 秒 · {M} 月(不补零) · {D} 日(不补零) · {date} 日期 · {time} 时间 · {datetime} 日期时间 · {weekday} 星期。其余文字原样保留。',
       presetOpenHint: '按规则新建：{title}',
     };
@@ -313,6 +316,9 @@ window.__ModuleLoader__.load({
       presetTemplatePh: 'Daily thought-{YYYY} {MM} {DD} {HH}:{mm}',
       presetTagsPh: 'thought, daily',
       presetPreview: 'Creates: {title}',
+      presetBody: 'Body template',
+      presetBodyHint: 'Empty means an empty body; placeholders work here too',
+      presetBodyPh: '## Worth recording\n\n## What I thought at the time\n\n## What I learned, what changes tomorrow',
       presetHint: 'Placeholders: {YYYY} year · {MM} month · {DD} day · {HH} hour · {mm} minute · {ss} second · {M} month (no padding) · {D} day (no padding) · {date} date · {time} time · {datetime} date+time · {weekday} weekday. Everything else stays as written.',
       presetOpenHint: 'Creates by rule: {title}',
     };
@@ -409,7 +415,8 @@ window.__ModuleLoader__.load({
 
     /**
      * Quick-create rules: a button label plus the title template it stamps on a
-     * fresh draft. A rule without a template is meaningless and is dropped.
+     * fresh draft, and an optional body template to pre-fill. A rule without a
+     * title template is meaningless and is dropped.
      */
     function cleanPresets(value) {
       if (!Array.isArray(value)) return [];
@@ -423,6 +430,7 @@ window.__ModuleLoader__.load({
           id: typeof item.id === 'string' && item.id !== '' ? item.id : makePresetId(),
           label,
           template,
+          body: typeof item.body === 'string' ? item.body.replace(/\r\n/g, '\n') : '',
           type: NOTE_TYPES.includes(item.type) ? item.type : 'thought',
           tags: typeof item.tags === 'string' ? item.tags.trim() : '',
         });
@@ -431,10 +439,11 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Expand a title rule into a real title: `{YYYY} {MM} {DD} {HH}:{mm}`
-     * becomes `2026 11 13 17:22`. Unknown placeholders stay as written.
+     * Expand a template into real text: `{YYYY} {MM} {DD} {HH}:{mm}` becomes
+     * `2026 11 13 17:22`. Used for both the title and the body template.
+     * Unknown placeholders stay as written.
      */
-    function renderTitleTemplate(template, date) {
+    function expandTemplate(template, date) {
       const day = date instanceof Date && Number.isFinite(date.getTime()) ? date : new Date();
       const pad2 = (value) => String(value).padStart(2, '0');
       const year = day.getFullYear();
@@ -1196,6 +1205,10 @@ window.__ModuleLoader__.load({
 .bs-preset-row select.bs-input{height:30px;padding:0 6px}
 .bs-preset-del{width:30px;padding:0;font-size:15px;line-height:1;justify-content:center}
 .bs-preset-preview{margin:5px 0 0;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bs-preset-body-label{display:flex;align-items:baseline;gap:8px;margin:8px 0 4px}
+.bs-preset-body-title{color:var(--dsw-alias-label-secondary);font-size:12px}
+.bs-preset-body-hint{color:var(--dsw-alias-label-secondary);font-size:11px;opacity:.8}
+.bs-preset-body{width:100%;min-height:72px;padding:8px 10px;line-height:1.6;font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;font-size:12px;resize:vertical}
 .bs-md{position:relative;min-height:100%}
 .bs-preview h1,.bs-preview h2,.bs-preview h3,.bs-preview h4,.bs-preview h5,.bs-preview h6{margin:1.4em 0 .55em;font-weight:600;line-height:1.35}
 .bs-preview h1{font-size:1.62em;padding-bottom:.28em;border-bottom:1px solid var(--dsw-alias-border-l1)}
@@ -1414,7 +1427,7 @@ window.__ModuleLoader__.load({
           const list = Array.isArray(current.presets) ? current.presets : [];
           return {
             ...current,
-            presets: [...list, { id: makePresetId(), label: '', template: '', type: 'thought', tags: '' }],
+            presets: [...list, { id: makePresetId(), label: '', template: '', body: '', type: 'thought', tags: '' }],
           };
         });
 
@@ -1549,7 +1562,22 @@ window.__ModuleLoader__.load({
                     '×',
                   ),
                 ),
-                h('p', { className: 'bs-preset-preview' }, t('presetPreview', { title: renderTitleTemplate(preset.template) })),
+                h(
+                  'div',
+                  { className: 'bs-preset-body-label' },
+                  h('span', { className: 'bs-preset-body-title' }, t('presetBody')),
+                  h('span', { className: 'bs-preset-body-hint' }, t('presetBodyHint')),
+                ),
+                h('textarea', {
+                  className: 'bs-input bs-preset-body',
+                  value: typeof preset.body === 'string' ? preset.body : '',
+                  placeholder: t('presetBodyPh'),
+                  'aria-label': t('presetBody'),
+                  rows: 4,
+                  spellCheck: false,
+                  onChange: setPreset(index, 'body'),
+                }),
+                h('p', { className: 'bs-preset-preview' }, t('presetPreview', { title: expandTemplate(preset.template) })),
               ),
             ),
             h(
@@ -1863,18 +1891,26 @@ window.__ModuleLoader__.load({
           });
         }, [drafts]);
 
-        /** Open a fresh draft whose title comes from a saved rule. */
+        /** Open a fresh draft whose title and body come from a saved rule. */
         const newPostWithPreset = useCallback((preset) => {
           if (preset === null || preset === undefined) return;
           const fresh = blankDraft();
-          fresh.title = renderTitleTemplate(preset.template);
+          fresh.title = expandTemplate(preset.template);
+          if (typeof preset.body === 'string' && preset.body !== '') {
+            fresh.body = expandTemplate(preset.body);
+          }
           if (NOTE_TYPES.includes(preset.type)) fresh.type = preset.type;
           if (typeof preset.tags === 'string' && preset.tags.trim() !== '') fresh.tags = preset.tags.trim();
           setDrafts((list) => [fresh, ...list]);
           setActiveId(fresh.id);
           setView('write');
           window.requestAnimationFrame(() => {
-            if (textRef.current !== null) textRef.current.focus();
+            const field = textRef.current;
+            if (field === null) return;
+            field.focus();
+            /* Land the caret after the template, ready to write. */
+            const end = field.value.length;
+            field.setSelectionRange(end, end);
           });
         }, []);
 
@@ -2875,7 +2911,7 @@ window.__ModuleLoader__.load({
                         type: 'button',
                         className: 'bs-btn bs-btn-preset',
                         key: 'preset-' + preset.id,
-                        title: t('presetOpenHint', { title: renderTitleTemplate(preset.template) }),
+                        title: t('presetOpenHint', { title: expandTemplate(preset.template) }),
                         onClick: () => newPostWithPreset(preset),
                       },
                       glyphPen(),

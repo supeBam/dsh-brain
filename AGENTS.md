@@ -49,7 +49,7 @@ curl -s -X POST http://127.0.0.1:<port>/brain/api \
 - 不要在 `client.js` 里直接 `fetch` GitHub API：令牌会进页面。所有 GitHub 调用走宿主路由；工具同样复用宿主侧的 gh 封装。
 - 凭据键必须符合 `<scope>/<id>`，新令牌用 `brain/github`。裸键 `brain` 会导致 Harness 下次启动失败。改动凭据读写后运行 `node --test test/credentials.test.mjs`。
 - 令牌经宿主 `credentials.modifyRecord` 写入。配置文件和页面只使用凭据状态。
-- 配置里的 `presets` 是「快捷新建标题规则」数组（`id` / `label` / `template` / `type` / `tags`）：宿主 `cleanPresets()` 与页面 `cleanPresets()` 都要过一遍，模板由页面的 `renderTitleTemplate()` 展开，宿主只存不渲染。
+- 配置里的 `presets` 是「快捷新建标题规则」数组（`id` / `label` / `template` / `body` / `type` / `tags`）：宿主 `cleanPresets()` 与页面 `cleanPresets()` 都要过一遍，标题与正文模板都由页面的 `expandTemplate()` 展开，宿主只存不渲染。
 - 样式只用 `--dsw-alias-*` 主题变量，不要写死颜色（图标与 Markdown 预览的代码块背景除外，都用 token 派生）。
 - 路由路径或 action 名变更时，同步改 `client.js` 里的 `API_ROUTE` 和 `callHost` 调用。
 

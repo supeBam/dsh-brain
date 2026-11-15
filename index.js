@@ -35,8 +35,9 @@ const NOTE_TYPES = ['thought', 'clip', 'quote', 'task'];
 const SYNC_DEBOUNCE_MS = 3000;
 
 /**
- * Quick-create rules: a button label plus the title template it stamps on a
- * new draft. The page renders the template, the host only stores it.
+ * Quick-create rules: a button label, the title template it stamps on a new
+ * draft, and an optional body template. The page renders both templates, the
+ * host only stores them.
  */
 function cleanPresets(raw) {
   if (!Array.isArray(raw)) return [];
@@ -50,6 +51,7 @@ function cleanPresets(raw) {
       id: typeof item.id === 'string' && item.id !== '' ? item.id : `p${list.length}`,
       label,
       template,
+      body: typeof item.body === 'string' ? item.body.replace(/\r\n/g, '\n') : '',
       type: NOTE_TYPES.includes(item.type) ? item.type : 'thought',
       tags: typeof item.tags === 'string' ? item.tags.trim() : '',
     });
